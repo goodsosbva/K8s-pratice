@@ -10,7 +10,8 @@ pratice-k8s/
 │   ├── main.go           # 서버 소스 코드
 │   ├── Dockerfile        # Docker 빌드 설정
 │   └── README.md         # 상세 가이드
-├── make-docker-container/ # Docker 컨테이너 예제
+├── make-cluster/          # Kind를 사용한 Kubernetes 클러스터 구축
+│   └── README.md         # 상세 가이드
 └── README.md             # 이 파일
 ```
 
@@ -29,8 +30,26 @@ docker run --rm --detach --publish 8080:8080 --name hello-server hello-server:1.
 curl localhost:8080
 ```
 
+### Kind 클러스터 생성
+
+```powershell
+# Kind 설치 확인
+kind version
+
+# 클러스터 생성
+kind create cluster --image=kindest/node:v1.29.0
+
+# 클러스터 확인
+kubectl cluster-info --context kind-kind
+kubectl get nodes
+
+# 클러스터 삭제
+kind delete cluster
+```
+
 ## 상세 가이드
 
 각 프로젝트의 상세한 설명은 해당 디렉토리의 README.md 파일을 참조하세요.
 
 - [hello-server 상세 가이드](./hello-server/README.md)
+- [make-cluster 상세 가이드](./make-cluster/README.md)

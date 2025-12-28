@@ -88,9 +88,30 @@ kubectl version --client
 
 ## 클러스터 생성
 
+### Git Bash 사용 시 주의사항
+
+Windows Git Bash에서 kind를 사용할 때는 Docker와 kubectl 경로를 PATH에 추가해야 합니다.
+
+프로젝트 루트에 `.bashrc` 파일이 있으므로 다음 명령어로 설정을 적용하세요:
+
+```bash
+source .bashrc
+```
+
+자세한 내용은 [make-the-pod 가이드](../make-the-pod/README.md)를 참조하세요.
+
 ### 기본 클러스터 생성
 
+**PowerShell:**
+
 ```powershell
+kind create cluster
+```
+
+**Git Bash:**
+
+```bash
+source .bashrc
 kind create cluster
 ```
 
@@ -102,7 +123,16 @@ kind create cluster
 
 ### 특정 Kubernetes 버전으로 클러스터 생성
 
+**PowerShell:**
+
 ```powershell
+kind create cluster --image=kindest/node:v1.29.0
+```
+
+**Git Bash:**
+
+```bash
+source .bashrc
 kind create cluster --image=kindest/node:v1.29.0
 ```
 
@@ -130,7 +160,16 @@ kubectl cluster-info --context kind-kind
 
 ### 이름을 지정하여 클러스터 생성
 
+**PowerShell:**
+
 ```powershell
+kind create cluster --name my-cluster
+```
+
+**Git Bash:**
+
+```bash
+source .bashrc
 kind create cluster --name my-cluster
 ```
 
@@ -138,7 +177,7 @@ kind create cluster --name my-cluster
 
 ### 클러스터 생성 오류
 
-**오류: "node(s) already exist for a cluster with the name "kind""**
+#### 오류 1: "node(s) already exist for a cluster with the name "kind""
 
 이미 같은 이름의 클러스터가 존재할 때 발생합니다.
 
@@ -146,7 +185,17 @@ kind create cluster --name my-cluster
 
 1. 기존 클러스터 삭제 후 재생성
 
+   **PowerShell:**
+
    ```powershell
+   kind delete cluster
+   kind create cluster
+   ```
+
+   **Git Bash:**
+
+   ```bash
+   source .bashrc
    kind delete cluster
    kind create cluster
    ```
@@ -155,6 +204,20 @@ kind create cluster --name my-cluster
    ```powershell
    kind create cluster --name my-cluster
    ```
+
+#### 오류 2: "docker: executable file not found in %PATH%"
+
+Git Bash에서 Docker를 찾을 수 없을 때 발생합니다.
+
+**해결 방법:**
+
+프로젝트 `.bashrc` 사용:
+
+```bash
+source .bashrc
+```
+
+자세한 내용은 [make-the-pod 가이드](../make-the-pod/README.md)를 참조하세요.
 
 ## 클러스터 확인 및 사용
 

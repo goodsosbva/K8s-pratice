@@ -1,8 +1,8 @@
-# Pod 디버깅 실습 가이드
+# Pod 디버깅 실습 실행 정리
 
 ## 개요
 
-이 가이드는 Kubernetes Pod에서 발생하는 문제를 진단하고 해결하는 실습을 다룹니다. 이미지 버전 오류로 인한 `ErrImagePull` 문제를 `kubectl describe`와 `kubectl edit` 명령어를 사용하여 해결하는 과정을 설명합니다.
+이 문서는 Kubernetes Pod에서 발생하는 문제를 진단하고 해결하는 실습 실행 내용을 정리합니다. 이미지 버전 오류로 인한 `ErrImagePull` 문제를 `kubectl describe`와 `kubectl edit` 명령어를 사용하여 해결하는 과정을 기록합니다.
 
 ## 사전 준비
 
@@ -10,8 +10,8 @@
 
 이 실습을 진행하기 전에 다음 실습을 완료해야 합니다:
 
-- [make-cluster 가이드](../make-cluster/README.md) - Kind 클러스터 생성
-- [make-the-pod 가이드](../make-the-pod/README.md) - Pod 생성 실습
+- [make-cluster 실행 정리](../make-cluster/README.md) - Kind 클러스터 생성
+- [make-the-pod 실행 정리](../make-the-pod/README.md) - Pod 생성 실습
 
 ### 2. 환경 설정
 
@@ -41,7 +41,7 @@ metadata:
 spec:
   containers:
     - name: hello-server
-      image: blux2/hello-server:1.1  # 존재하지 않는 버전
+      image: blux2/hello-server:1.1 # 존재하지 않는 버전
       ports:
         - containerPort: 8080
 ```
@@ -58,7 +58,7 @@ metadata:
 spec:
   containers:
     - name: hello-server
-      image: blux2/hello-server:1.0  # 정상 버전
+      image: blux2/hello-server:1.0 # 정상 버전
       ports:
         - containerPort: 8080
 ```
@@ -129,7 +129,7 @@ Containers:
 Events:
   Type     Reason     Age               From               Message
   ----     ------     ----              ----               -------
-  Normal   Scheduled  19m               default-scheduler  Successfully assigned default/myapp to kind-control-plane 
+  Normal   Scheduled  19m               default-scheduler  Successfully assigned default/myapp to kind-control-plane
   Normal   Pulling    19m               kubelet            Pulling image "blux2/hello-server:1.0"
   Normal   Pulled     19m               kubelet            Successfully pulled image "blux2/hello-server:1.0" in 5.466s
   Normal   Created    19m               kubelet            Created container hello-server
@@ -172,6 +172,7 @@ kubectl edit pod myapp
 **편집 내용:**
 
 1. 편집기가 열리면 이미지 버전을 수정:
+
    - `image: blux2/hello-server:1.1` → `image: blux2/hello-server:1.0`
 
 2. 파일 저장 후 종료 (vi의 경우: `:wq`, nano의 경우: `Ctrl+X` → `Y` → `Enter`)
@@ -286,7 +287,7 @@ kubectl logs -f <pod-name>
 kubectl logs <pod-name> -c <container-name>
 ```
 
-## 문제 해결 가이드
+## 문제 해결
 
 ### 1. ErrImagePull / ImagePullBackOff
 
@@ -490,4 +491,3 @@ Pod는 변경되지 않습니다.
 - [kubectl edit 문서](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_edit/)
 - [Troubleshooting Pods](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/)
 - [kubectl 치트시트](https://kubernetes.io/docs/reference/kubectl/cheatsheet/)
-

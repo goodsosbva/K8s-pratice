@@ -25,6 +25,10 @@ pratice-k8s/
 │   ├── deployment-hello-server-rollingupdate.yaml  # 문제가 있는 Deployment
 │   ├── service-nodeport.yaml  # NodePort Service
 │   └── README.md        # 실행 정리
+├── make-stateless-application-secure/  # Stateless 애플리케이션 보안 설정 실습
+│   ├── deployment-destruction.yaml  # 문제가 있는 Deployment
+│   ├── deployment-resource-handson.yaml  # 리소스 제한 예시
+│   └── README.md        # 실행 정리
 ├── kind-config-portmapping.yaml  # 포트 매핑 설정
 ├── kind-config-multinode.yaml  # 멀티 노드 설정
 ├── kind-config-multinode-portmapping.yaml  # 멀티 노드 + 포트 매핑 설정
@@ -146,6 +150,25 @@ kubectl apply -f service-nodeport.yaml
 curl localhost:30599
 ```
 
+### Stateless 애플리케이션 보안 설정
+
+```bash
+# make-stateless-application-secure 디렉토리로 이동
+cd make-stateless-application-secure
+
+# 문제가 있는 Deployment 생성 (Health Check 오류, 불필요한 컨테이너)
+kubectl apply -f deployment-destruction.yaml
+
+# Pod 상태 확인 (Readiness Probe 실패 확인)
+kubectl get pods -l app=hello-server
+
+# 문제 분석 및 수정 (Health Check 경로/포트 수정, 보안 설정 추가)
+kubectl edit deploy hello-server
+
+# 수정 후 상태 확인
+kubectl get pods -l app=hello-server
+```
+
 ## 실행 정리
 
 각 프로젝트의 실행 내용은 해당 디렉토리의 README.md 파일을 참조하세요.
@@ -155,3 +178,4 @@ curl localhost:30599
 - [make-the-pod 실행 정리](./make-the-pod/README.md)
 - [try-debugging 실행 정리](./try-debugging/README.md)
 - [break-and-fix 실행 정리](./break-and-fix/README.md)
+- [make-stateless-application-secure 실행 정리](./make-stateless-application-secure/README.md)

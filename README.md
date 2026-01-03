@@ -29,6 +29,13 @@ pratice-k8s/
 │   ├── deployment-destruction.yaml  # 문제가 있는 Deployment
 │   ├── deployment-resource-handson.yaml  # 리소스 제한 예시
 │   └── README.md        # 실행 정리
+├── UnderstandingKubernettistStructureAndArchitecture/  # Kubernetes 구조 및 모니터링 실습
+│   ├── multinode-nodeport.yaml  # 멀티 노드 클러스터 설정
+│   ├── namespace.yaml  # 네임스페이스 설정
+│   ├── hello-server.yaml  # 애플리케이션 배포
+│   ├── values.yaml  # Prometheus 설정
+│   ├── main.go  # 애플리케이션 소스 코드
+│   └── README.md  # 실행 정리
 ├── kind-config-portmapping.yaml  # 포트 매핑 설정
 ├── kind-config-multinode.yaml  # 멀티 노드 설정
 ├── kind-config-multinode-portmapping.yaml  # 멀티 노드 + 포트 매핑 설정
@@ -169,6 +176,30 @@ kubectl edit deploy hello-server
 kubectl get pods -l app=hello-server
 ```
 
+### Kubernetes 구조 및 모니터링 실습
+
+```bash
+# UnderstandingKubernettistStructureAndArchitecture 디렉토리로 이동
+cd UnderstandingKubernettistStructureAndArchitecture
+
+# 멀티 노드 클러스터 생성
+kind create cluster --name multinode-nodeport --config multinode-nodeport.yaml --image=kindest/node:v1.29.0
+
+# 네임스페이스 및 애플리케이션 배포
+kubectl apply -f namespace.yaml
+kubectl apply -f hello-server.yaml
+
+# Prometheus 설치
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+kubectl create namespace monitoring
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack -f values.yaml -n monitoring
+
+# Grafana 접근
+kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
+```
+
 ## 실행 정리
 
 각 프로젝트의 실행 내용은 해당 디렉토리의 README.md 파일을 참조하세요.
@@ -179,3 +210,4 @@ kubectl get pods -l app=hello-server
 - [try-debugging 실행 정리](./try-debugging/README.md)
 - [break-and-fix 실행 정리](./break-and-fix/README.md)
 - [make-stateless-application-secure 실행 정리](./make-stateless-application-secure/README.md)
+- [UnderstandingKubernettistStructureAndArchitecture 실행 정리](./UnderstandingKubernettistStructureAndArchitecture/README.md)

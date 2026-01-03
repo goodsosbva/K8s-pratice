@@ -24,10 +24,18 @@
    - 리소스 제한 설정
    - 효율적인 컨테이너 구성
 
-4. **문제 진단 및 해결**
+4. **리소스 제한 문제 진단**
+
+   - OOMKilled (Exit Code 137) 이해
+   - CrashLoopBackOff 상태 분석
+   - Pod의 lastState 확인 방법
+   - 리소스 사용량 모니터링
+
+5. **문제 진단 및 해결**
    - `kubectl describe`로 문제 분석
    - `kubectl edit`로 실시간 수정
    - YAML 파일 수정 및 재적용
+   - `kubectl get`의 jsonpath 활용
 
 ## 사전 준비
 
@@ -173,6 +181,48 @@ spec:
 **참고사항:**
 
 - 리소스 제한 설정은 올바르지만, Health Check 경로는 여전히 수정이 필요합니다.
+
+### deployment-memory-leak.yaml (메모리 제한 실습 파일)
+
+이 파일은 메모리 제한이 낮게 설정된 Deployment입니다. OOMKilled 문제를 재현하기 위한 실습 파일입니다:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-server
+  labels:
+    app: hello-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hello-server
+  template:
+    metadata:
+      labels:
+        app: hello-server
+    spec:
+      containers:
+        - name: hello-server
+          image: blux2/hello-server:1.7
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "100Mi"
+              cpu: "10m"
+            limits:
+              memory: "100Mi" # ⚠️ 메모리 제한이 낮음 (OOMKilled 발생 가능)
+              cpu: "10m"
+```
+
+**실습 목적:**
+
+- 메모리 제한 초과 시 Pod 재시작 동작 확인
+- Exit Code 137 (OOMKilled) 이해
+- CrashLoopBackOff 상태 확인
+- 리소스 제한 조정 방법 학습
 
 ## 실습 단계
 
@@ -443,6 +493,288 @@ kubectl describe pod -l app=hello-server
      memory:  64Mi
    ```
 
+## 리소스 제한 실습 (메모리 리크 시나리오)
+
+### 실습 목표
+
+리소스 제한이 너무 낮게 설정된 경우 발생하는 문제를 확인하고, Pod의 재시작 상태를 분석하는 방법을 학습합니다.
+
+### 1. 메모리 제한이 낮은 Deployment 생성
+
+```bash
+# make-stateless-application-secure 디렉토리로 이동
+cd make-stateless-application-secure
+
+# 메모리 제한이 낮은 Deployment 생성 (100Mi)
+kubectl apply -f deployment-memory-leak.yaml
+```
+
+**deployment-memory-leak.yaml 내용:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-server
+  labels:
+    app: hello-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hello-server
+  template:
+    metadata:
+      labels:
+        app: hello-server
+    spec:
+      containers:
+        - name: hello-server
+          image: blux2/hello-server:1.7
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "100Mi"
+              cpu: "10m"
+            limits:
+              memory: "100Mi" # ⚠️ 메모리 제한이 낮음
+              cpu: "10m"
+```
+
+### 2. Pod 상태 모니터링
+
+```bash
+# Pod 상태를 실시간으로 모니터링
+kubectl get pods -w
+```
+
+**초기 상태:**
+
+```
+NAME                            READY   STATUS    RESTARTS   AGE
+hello-server-856d5c6c7b-lkwlh   1/1     Running   1          2m19s
+hello-server-856d5c6c7b-qvzsg   1/1     Running   0          2m19s
+hello-server-856d5c6c7b-vbb6g   1/1     Running   0          2m19s
+```
+
+**메모리 제한 초과 시:**
+
+```
+NAME                            READY   STATUS              RESTARTS   AGE
+hello-server-856d5c6c7b-lkwlh   0/1     Error               1          10m
+hello-server-856d5c6c7b-qvzsg   1/1     Running             0          10m
+hello-server-856d5c6c7b-vbb6g   1/1     Running             0          10m
+hello-server-856d5c6c7b-lkwlh   0/1     CrashLoopBackOff    1 (16s ago)   10m
+hello-server-856d5c6c7b-lkwlh   1/1     Running             2 (20s ago)   10m
+```
+
+**관찰 사항:**
+
+- Pod가 `Error` 상태로 변경됨
+- `CrashLoopBackOff` 상태로 전환됨
+- `RESTARTS` 카운트가 증가함
+- 일정 시간 후 자동으로 재시작됨
+
+### 3. Pod의 종료 상태 확인
+
+```bash
+# Pod의 lastState 확인 (종료된 컨테이너 상태)
+kubectl get pod hello-server-856d5c6c7b-lkwlh -o=jsonpath="{.status.containerStatuses[0].lastState}"
+```
+
+**출력 예시:**
+
+```json
+{
+  "terminated": {
+    "containerID": "containerd://69177dd18b65a4cfc71e6f35469c3513d5d98ecfc183fb26dc1cbb2e80025bf0",
+    "exitCode": 137,
+    "finishedAt": "2026-01-02T10:59:42Z",
+    "reason": "Error",
+    "startedAt": "2026-01-02T10:51:05Z"
+  }
+}
+```
+
+**중요한 정보:**
+
+- **exitCode: 137** - OOMKilled (Out Of Memory Killed)를 의미
+  - 128 + 9 (SIGKILL) = 137
+  - Kubernetes가 메모리 제한을 초과한 컨테이너를 강제 종료함
+- **reason: "Error"** - 컨테이너가 오류로 종료됨
+- **finishedAt / startedAt** - 컨테이너의 실행 시간 확인 가능
+
+### 4. Pod 상세 정보 확인
+
+```bash
+# Pod 상세 정보 확인
+kubectl describe pod hello-server-856d5c6c7b-lkwlh
+```
+
+**확인할 내용:**
+
+1. **리소스 제한:**
+
+   ```
+   Limits:
+     cpu:     10m
+     memory:  100Mi
+   Requests:
+     cpu:     10m
+     memory:  100Mi
+   ```
+
+2. **Events 섹션:**
+
+   ```
+   Warning  Failed   Error: container hello-server is OOMKilled (memory limit exceeded)
+   ```
+
+3. **상태 정보:**
+   ```
+   State:          Running
+   Last State:     Terminated
+     Reason:       Error
+     Exit Code:    137
+   ```
+
+### 5. 리소스 사용량 확인 (metrics-server 필요)
+
+```bash
+# Pod의 리소스 사용량 확인
+kubectl top pod hello-server-856d5c6c7b-lkwlh
+
+# 모든 Pod의 리소스 사용량 확인
+kubectl top pods -l app=hello-server
+```
+
+**출력 예시:**
+
+```
+NAME                            CPU(cores)   MEMORY(bytes)
+hello-server-856d5c6c7b-lkwlh   5m           150Mi  # ⚠️ 제한(100Mi) 초과
+hello-server-856d5c6c7b-qvzsg    3m           80Mi
+hello-server-856d5c6c7b-vbb6g   4m           85Mi
+```
+
+### 6. 문제 해결: 리소스 제한 증가
+
+```bash
+# Deployment 편집
+kubectl edit deploy hello-server
+```
+
+**수정할 내용:**
+
+```yaml
+resources:
+  requests:
+    memory: "100Mi"
+    cpu: "10m"
+  limits:
+    memory: "200Mi" # 100Mi → 200Mi로 증가
+    cpu: "100m" # 10m → 100m으로 증가
+```
+
+**또는 YAML 파일 수정 후 재적용:**
+
+```bash
+# deployment-memory-leak.yaml 파일 수정 후
+kubectl apply -f deployment-memory-leak.yaml
+```
+
+### 7. Rolling Update 확인
+
+```bash
+# Rolling Update 진행 상황 확인
+kubectl get pods -w
+```
+
+**출력 예시:**
+
+```
+NAME                            READY   STATUS              RESTARTS   AGE
+hello-server-58654c5c9f-5ccjk   0/1     ContainerCreating   0          5s
+hello-server-856d5c6c7b-lkwlh   1/1     Running             2 (82s ago)   11m
+hello-server-856d5c6c7b-qvzsg    1/1     Running             0             11m
+hello-server-856d5c6c7b-vbb6g   1/1     Running             0             11m
+```
+
+**관찰 사항:**
+
+- 새로운 ReplicaSet이 생성됨 (`hello-server-58654c5c9f-*`)
+- 새로운 Pod가 점진적으로 생성됨
+- 기존 Pod는 새 Pod가 준비될 때까지 유지됨
+
+### 8. 최종 상태 확인
+
+```bash
+# Pod 상태 확인
+kubectl get pods -l app=hello-server
+
+# 서비스 테스트 (포트 포워딩 또는 Service 사용)
+kubectl port-forward deployment/hello-server 8080:8080
+```
+
+**다른 터미널에서:**
+
+```bash
+curl localhost:8080
+```
+
+**예상 출력:**
+
+```
+Hello, world! Let's learn Kubernetes!
+```
+
+### 9. 주요 학습 포인트
+
+1. **Exit Code 137의 의미**
+
+   - OOMKilled를 나타냄
+   - 메모리 제한 초과 시 Kubernetes가 컨테이너를 강제 종료
+
+2. **CrashLoopBackOff 동작**
+
+   - Pod가 반복적으로 실패하면 지수 백오프로 재시작 간격 증가
+   - 문제 해결 후 자동으로 정상 상태로 복구
+
+3. **리소스 제한 설정의 중요성**
+
+   - 너무 낮으면: OOMKilled 발생
+   - 너무 높으면: 리소스 낭비 및 노드 스케줄링 문제
+
+4. **Rolling Update의 안전성**
+   - 리소스 제한 변경 시에도 서비스 중단 없이 업데이트 가능
+   - 새 Pod가 준비될 때까지 기존 Pod 유지
+
+### 10. 유용한 명령어
+
+```bash
+# Pod의 종료 상태 확인
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState}"
+
+# Exit Code만 확인
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState.terminated.exitCode}"
+
+# 종료 이유 확인
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState.terminated.reason}"
+
+# Pod 이벤트 확인
+kubectl describe pod <pod-name> | grep -A 20 "Events"
+
+# 리소스 사용량 확인 (metrics-server 필요)
+kubectl top pod <pod-name>
+
+# Deployment 롤아웃 상태 확인
+kubectl rollout status deploy hello-server
+
+# Deployment 롤아웃 히스토리 확인
+kubectl rollout history deploy hello-server
+```
+
 ## 주요 개념 설명
 
 ### Readiness Probe vs Liveness Probe
@@ -663,6 +995,14 @@ securityContext:
 **증상:**
 
 ```
+STATUS              RESTARTS
+CrashLoopBackOff    5
+Error               1
+```
+
+또는
+
+```
 STATUS
 OOMKilled
 ```
@@ -671,18 +1011,58 @@ OOMKilled
 
 - 메모리 제한이 너무 낮음
 - 애플리케이션이 limits를 초과함
+- Exit Code 137 (OOMKilled) 발생
+
+**진단:**
+
+```bash
+# Pod의 종료 상태 확인
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState}"
+
+# Exit Code 확인 (137 = OOMKilled)
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState.terminated.exitCode}"
+
+# 종료 이유 확인
+kubectl get pod <pod-name> -o=jsonpath="{.status.containerStatuses[0].lastState.terminated.reason}"
+
+# 리소스 사용량 확인 (metrics-server 필요)
+kubectl top pod <pod-name>
+
+# Pod 이벤트 확인
+kubectl describe pod <pod-name> | grep -A 10 "Events"
+```
 
 **해결:**
 
 ```bash
-# 리소스 사용량 확인
-kubectl top pod <pod-name>
-
 # 리소스 제한 증가
 kubectl edit deploy hello-server
+
+# 또는 YAML 파일 수정 후 재적용
+kubectl apply -f deployment-memory-leak.yaml
 ```
 
+**수정 예시:**
+
+```yaml
+resources:
+  requests:
+    memory: "100Mi"
+    cpu: "10m"
+  limits:
+    memory: "200Mi" # 100Mi → 200Mi로 증가
+    cpu: "100m" # 10m → 100m으로 증가
+```
+
+**예방:**
+
+- 애플리케이션의 실제 메모리 사용량을 모니터링하여 적절한 제한 설정
+- requests와 limits의 차이를 적절히 설정 (버퍼 제공)
+- 메모리 사용량이 예상보다 높다면 애플리케이션 최적화 고려
+
 ## 실습 단계 요약
+
+### 기본 실습 (Health Check 및 보안 설정)
 
 1. ✅ 문제가 있는 Deployment 생성
 2. ✅ Pod 상태 확인 (Readiness Probe 실패 확인)
@@ -692,6 +1072,16 @@ kubectl edit deploy hello-server
 6. ✅ 보안 설정 추가 (Security Context)
 7. ✅ 리소스 제한 설정
 8. ✅ 수정된 Deployment 적용 및 검증
+
+### 리소스 제한 실습 (메모리 리크 시나리오)
+
+1. ✅ 메모리 제한이 낮은 Deployment 생성
+2. ✅ Pod 상태 모니터링 (CrashLoopBackOff 확인)
+3. ✅ Pod의 종료 상태 확인 (exitCode 137 - OOMKilled)
+4. ✅ 리소스 사용량 확인 및 분석
+5. ✅ 리소스 제한 증가 (Deployment 수정)
+6. ✅ Rolling Update 진행 상황 확인
+7. ✅ 최종 상태 검증 및 서비스 테스트
 
 ## 다음 단계
 

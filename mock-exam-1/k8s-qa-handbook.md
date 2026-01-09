@@ -16,28 +16,28 @@ spec:
   template:
     spec:
       volumes:
-      - name: config-vol
-        emptyDir: {}
+        - name: config-vol
+          emptyDir: {}
       containers:
-      - name: mc-pod-1
-        image: nginx:1-alpine
-        env:
-          - name: NODE_NAME  # ❌ 들여쓰기 오류
-            valueFrom:
-              fieldRef:
-                fieldPath: spec.nodeName
-      - name: mc-pod-2
-        image: busybox:1
-        command: ['sh', '-c', 'echo date >> /var/log/shared/date.log']  # ❌ 문자열 "date" 출력
-        volumeMounts:
-        - name: config-vol
-          mountPath: /var/log/shared
-      - name: mc-pod-3
-        image: busybox:1
-        command: ['sh', '-c', 'echo tail -f /var/log/shared/date.log']  # ❌ 문자열만 출력
-        volumeMounts:
-        - name: config-vol
-          mountPath: /var/log/shared
+        - name: mc-pod-1
+          image: nginx:1-alpine
+          env:
+            - name: NODE_NAME # ❌ 들여쓰기 오류
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+        - name: mc-pod-2
+          image: busybox:1
+          command: ["sh", "-c", "echo date >> /var/log/shared/date.log"] # ❌ 문자열 "date" 출력
+          volumeMounts:
+            - name: config-vol
+              mountPath: /var/log/shared
+        - name: mc-pod-3
+          image: busybox:1
+          command: ["sh", "-c", "echo tail -f /var/log/shared/date.log"] # ❌ 문자열만 출력
+          volumeMounts:
+            - name: config-vol
+              mountPath: /var/log/shared
       restartPolicy: OnFailure
 ```
 
@@ -59,28 +59,28 @@ spec:
   template:
     spec:
       volumes:
-      - name: config-vol
-        emptyDir: {}
+        - name: config-vol
+          emptyDir: {}
       containers:
-      - name: mc-pod-1
-        image: nginx:1-alpine
-        env:
-        - name: NODE_NAME  # ✅ 들여쓰기 수정
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-      - name: mc-pod-2
-        image: busybox:1
-        command: ['sh', '-c', 'date >> /var/log/shared/date.log']  # ✅ date 명령어 사용
-        volumeMounts:
-        - name: config-vol
-          mountPath: /var/log/shared
-      - name: mc-pod-3
-        image: busybox:1
-        command: ['sh', '-c', 'tail -f /var/log/shared/date.log']  # ✅ tail 실행
-        volumeMounts:
-        - name: config-vol
-          mountPath: /var/log/shared
+        - name: mc-pod-1
+          image: nginx:1-alpine
+          env:
+            - name: NODE_NAME # ✅ 들여쓰기 수정
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+        - name: mc-pod-2
+          image: busybox:1
+          command: ["sh", "-c", "date >> /var/log/shared/date.log"] # ✅ date 명령어 사용
+          volumeMounts:
+            - name: config-vol
+              mountPath: /var/log/shared
+        - name: mc-pod-3
+          image: busybox:1
+          command: ["sh", "-c", "tail -f /var/log/shared/date.log"] # ✅ tail 실행
+          volumeMounts:
+            - name: config-vol
+              mountPath: /var/log/shared
       restartPolicy: OnFailure
 ```
 
@@ -134,7 +134,8 @@ kubectl apply -f 1.yaml
 **해결:**
 
 ```yaml
-command: ['sh', '-c', 'while true; do date >> /var/log/shared/date.log; sleep 1; done']
+command:
+  ["sh", "-c", "while true; do date >> /var/log/shared/date.log; sleep 1; done"]
 ```
 
 **설명:**
@@ -189,8 +190,8 @@ spec:
     tier: msg
   ports:
     - protocol: TCP
-      port: 6379      # Service 포트
-      targetPort: 9376  # ❌ 잘못됨: Pod의 실제 포트와 일치해야 함
+      port: 6379 # Service 포트
+      targetPort: 9376 # ❌ 잘못됨: Pod의 실제 포트와 일치해야 함
 ```
 
 ---
@@ -200,16 +201,20 @@ spec:
 **확인 순서 (우선순위):**
 
 1. **Pod YAML의 ports 섹션 확인**
+
    ```bash
    kubectl get pod <pod-name> -o jsonpath='{.spec.containers[0].ports}'
    ```
+
    - Pod describe에서 `Port: <none>` → Pod YAML에 ports가 없음
 
 2. **컨테이너 내부 실제 포트 확인 (필수)**
+
    ```bash
    kubectl exec <pod-name> -- netstat -tlnp   # 또는
    kubectl exec <pod-name> -- ss -tlnp
    ```
+
    - 실제 리스닝 포트를 확인한 값이 `targetPort`가 되어야 함
 
 3. **이미지의 기본 포트 사용**
@@ -359,10 +364,10 @@ metadata:
   name: hr-web-app-service
 spec:
   ports:
-  - port: 8080
-    protocol: TCP
-    targetPort: 8080
-    nodePort: 30082
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+      nodePort: 30082
   selector:
     app: nginx
   type: NodePort
@@ -539,4 +544,3 @@ kubectl get pods -l job-name=<job-name>
 - [ ] `kubectl logs`로 로그 확인
 - [ ] `kubectl get`으로 현재 상태 확인
 - [ ] YAML 문법 오류 확인 (들여쓰기, 따옴표 등)
-

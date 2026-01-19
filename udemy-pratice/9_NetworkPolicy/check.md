@@ -28,20 +28,63 @@ NETPOL_NAME=$(kubectl get netpol -n backend -o jsonpath='{.items[0].metadata.nam
 if [ -n "$NETPOL_NAME" ]; then
   echo "NetworkPolicy 이름: $NETPOL_NAME"
   
-  # namespaceSelector 확인
-  NAMESPACE_SELECTOR=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[0].namespaceSelector.matchLabels.name}' 2>/dev/null)
-  if [ "$NAMESPACE_SELECTOR" = "frontend" ]; then
-    echo "✅ frontend namespace만 허용됨"
+  # NetworkPolicy 전체 구조 확인
+  echo ""
+  echo "=== NetworkPolicy YAML 구조 확인 ==="
+  kubectl get netpol $NETPOL_NAME -n backend -o yaml | grep -A 30 "spec:"
+  
+  # namespaceSelector 확인 (여러 방법으로 시도)
+  NAMESPACE_SELECTOR1=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[0].namespaceSelector.matchLabels.app}' 2>/dev/null)
+  NAMESPACE_SELECTOR2=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[1].namespaceSelector.matchLabels.app}' 2>/dev/null)
+  
+  if [ "$NAMESPACE_SELECTOR1" = "frontend" ] || [ "$NAMESPACE_SELECTOR2" = "frontend" ]; then
+    echo "✅ frontend namespace 허용됨 (namespaceSelector: ${NAMESPACE_SELECTOR1:-$NAMESPACE_SELECTOR2})"
   else
-    echo "⚠️  namespaceSelector 확인 필요 (현재: ${NAMESPACE_SELECTOR:-없음})"
+    echo "⚠️  namespaceSelector 확인 필요"
+    echo "   from[0].namespaceSelector: ${NAMESPACE_SELECTOR1:-없음}"
+    echo "   from[1].namespaceSelector: ${NAMESPACE_SELECTOR2:-없음}"
   fi
   
-  # podSelector 확인 (모든 Pod에 적용되는지)
-  POD_SELECTOR=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.podSelector}' 2>/dev/null)
-  if echo "$POD_SELECTOR" | grep -q "{}" || [ -z "$POD_SELECTOR" ]; then
-    echo "✅ podSelector가 모든 Pod에 적용됨 (least permissive)"
+  # podSelector 확인 (보호받는 Pod)
+  POD_SELECTOR=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.podSelector.matchLabels.app}' 2>/dev/null)
+  if [ "$POD_SELECTOR" = "backend" ]; then
+    echo "✅ podSelector가 backend Pod를 보호함"
   else
-    echo "⚠️  podSelector 확인 필요"
+    echo "⚠️  podSelector 확인 필요 (현재: ${POD_SELECTOR:-없음})"
+  fi
+  
+  # from 규칙의 podSelector 확인 (허용되는 Pod)
+  FROM_POD_SELECTOR=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[0].podSelector.matchLabels.app}' 2>/dev/null)
+  FROM_POD_SELECTOR2=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[1].podSelector.matchLabels.app}' 2>/dev/null)
+  
+  if [ "$FROM_POD_SELECTOR" = "frontend" ] || [ "$FROM_POD_SELECTOR2" = "frontend" ]; then
+    echo "✅ frontend Pod 허용됨 (podSelector: ${FROM_POD_SELECTOR:-$FROM_POD_SELECTOR2})"
+  else
+    echo "⚠️  from 규칙의 podSelector 확인 필요"
+    echo "   from[0].podSelector: ${FROM_POD_SELECTOR:-없음}"
+    echo "   from[1].podSelector: ${FROM_POD_SELECTOR2:-없음}"
+  fi
+  
+  # namespaceSelector와 podSelector가 같은 항목에 있는지 확인 (AND 조건)
+  FROM_0_NS=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[0].namespaceSelector.matchLabels.app}' 2>/dev/null)
+  FROM_0_POD=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].from[0].podSelector.matchLabels.app}' 2>/dev/null)
+  
+  if [ "$FROM_0_NS" = "frontend" ] && [ "$FROM_0_POD" = "frontend" ]; then
+    echo "✅ namespaceSelector와 podSelector가 같은 항목에 있음 (AND 조건 - 올바름)"
+  elif [ -n "$FROM_0_NS" ] && [ -z "$FROM_0_POD" ]; then
+    echo "⚠️  from[0]에 namespaceSelector만 있고 podSelector가 없음"
+  elif [ -z "$FROM_0_NS" ] && [ -n "$FROM_0_POD" ]; then
+    echo "⚠️  from[0]에 podSelector만 있고 namespaceSelector가 없음"
+  else
+    echo "⚠️  from 구조 확인 필요"
+  fi
+  
+  # 포트 확인
+  PORT=$(kubectl get netpol $NETPOL_NAME -n backend -o jsonpath='{.spec.ingress[0].ports[0].port}' 2>/dev/null)
+  if [ "$PORT" = "8080" ]; then
+    echo "✅ 포트 8080 허용됨"
+  else
+    echo "⚠️  포트 확인 필요 (현재: ${PORT:-없음})"
   fi
   
   # policyTypes 확인
@@ -106,21 +149,87 @@ else
   echo "⚠️  Backend Service를 찾을 수 없습니다"
 fi
 
+# CNI 확인 (NetworkPolicy 지원 여부)
+echo ""
+echo "=== CNI 확인 (NetworkPolicy 지원) ==="
+CNI_PODS=$(kubectl get pods -n kube-system -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | grep -iE "flannel|calico|weave|canal" | wc -w)
+if [ "$CNI_PODS" -gt 0 ]; then
+  echo "✅ CNI 설치됨 (NetworkPolicy 지원 가능)"
+  kubectl get pods -n kube-system | grep -iE "flannel|calico|weave|canal" | head -3
+else
+  echo "⚠️  CNI를 찾을 수 없습니다 (NetworkPolicy가 작동하지 않을 수 있음)"
+  echo "   NetworkPolicy를 지원하는 CNI (Flannel, Calico 등)가 설치되어 있는지 확인하세요"
+fi
+
 # frontend에서 backend로 접근 가능한지 확인
 echo ""
 echo "=== frontend에서 backend로의 접근 허용 확인 ==="
-FRONTEND_POD=$(kubectl get pods -n frontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$FRONTEND_POD" ] && [ -n "$BACKEND_SERVICE" ]; then
-  echo "Frontend Pod에서 Backend로 접근 시도 중..."
-  FRONTEND_RESULT=$(kubectl exec -n frontend $FRONTEND_POD -- wget -T 2 -O- http://${BACKEND_HOST}:${BACKEND_PORT} 2>&1 || echo "FAILED")
-  
-  if echo "$FRONTEND_RESULT" | grep -qi "200\|connected\|nginx"; then
-    echo "✅ frontend에서 backend로의 접근이 허용됨"
-  else
-    echo "⚠️  frontend에서 backend로의 접근이 차단되거나 실패 (NetworkPolicy 확인 필요)"
+if [ -n "$BACKEND_SERVICE" ]; then
+  # Backend Pod 상태 확인
+  echo "Backend Pod 상태 확인:"
+  kubectl get pods -n backend -l app=backend
+  BACKEND_POD_READY=$(kubectl get pods -n backend -l app=backend -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+  if [ "$BACKEND_POD_READY" != "True" ]; then
+    echo "⚠️  Backend Pod가 Ready 상태가 아닙니다"
+    kubectl describe pods -n backend -l app=backend | tail -20
   fi
+  
+  # Backend Service Endpoints 확인
+  echo ""
+  echo "Backend Service Endpoints 확인:"
+  kubectl get endpoints -n backend $BACKEND_SERVICE
+  
+  # Frontend namespace에서 busybox Pod로 Backend 접근 시도
+  echo ""
+  echo "Frontend namespace에서 busybox Pod로 Backend 접근 시도 중..."
+  FRONTEND_RESULT=$(kubectl run test-frontend -n frontend --image=busybox:latest --rm -i --restart=Never --timeout=10s -- wget -q -O- --timeout=5 http://${BACKEND_HOST}:${BACKEND_PORT} 2>&1)
+  EXIT_CODE=$?
+  
+  if [ $EXIT_CODE -eq 0 ] && echo "$FRONTEND_RESULT" | grep -qi "nginx\|html\|200"; then
+    echo "✅ frontend에서 backend로의 접근이 허용됨"
+    echo "   응답: $(echo "$FRONTEND_RESULT" | head -3)"
+  else
+    echo "❌ frontend에서 backend로의 접근이 차단되거나 실패"
+    echo "   종료 코드: $EXIT_CODE"
+    echo "   결과: $FRONTEND_RESULT"
+    echo ""
+    echo "=== 상세 디버깅 정보 ==="
+    echo "1. Backend Service:"
+    kubectl get svc -n backend $BACKEND_SERVICE
+    echo ""
+    echo "2. Backend Pod 상태:"
+    kubectl get pods -n backend -l app=backend -o wide
+    echo ""
+    echo "3. Backend Pod IP:"
+    BACKEND_POD_IP=$(kubectl get pods -n backend -l app=backend -o jsonpath='{.items[0].status.podIP}' 2>/dev/null)
+    echo "   $BACKEND_POD_IP"
+    echo ""
+    echo "4. NetworkPolicy 상세:"
+    kubectl describe netpol $NETPOL_NAME -n backend | grep -A 15 "Allowing ingress"
+    echo ""
+    echo "5. Frontend namespace label 확인:"
+    kubectl get namespace frontend --show-labels
+    echo ""
+    echo "6. Frontend Pod label 확인:"
+    kubectl get pods -n frontend -l app=frontend --show-labels
+    echo ""
+    echo "7. Pod IP로 직접 접근 테스트:"
+    if [ -n "$BACKEND_POD_IP" ]; then
+      DIRECT_RESULT=$(kubectl run test-direct -n frontend --image=busybox:latest --rm -i --restart=Never --timeout=10s -- wget -q -O- --timeout=5 http://${BACKEND_POD_IP}:8080 2>&1)
+      if [ $? -eq 0 ]; then
+        echo "   ✅ Pod IP로 직접 접근 성공 (NetworkPolicy 문제일 수 있음)"
+      else
+        echo "   ❌ Pod IP로 직접 접근도 실패 (다른 문제일 수 있음)"
+        echo "   결과: $DIRECT_RESULT"
+      fi
+      kubectl delete pod test-direct -n frontend >/dev/null 2>&1
+    fi
+  fi
+  
+  # 정리
+  kubectl delete pod test-frontend -n frontend >/dev/null 2>&1
 else
-  echo "⚠️  Frontend Pod 또는 Backend Service를 찾을 수 없습니다"
+  echo "⚠️  Backend Service를 찾을 수 없습니다"
 fi
 
 # 정리

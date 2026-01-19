@@ -5,8 +5,8 @@ kubectl create namespace frontend
 kubectl create namespace backend
 
 # namespace에 label 추가 (NetworkPolicy에서 namespaceSelector로 사용)
-kubectl label namespace frontend name=frontend
-kubectl label namespace backend name=backend
+kubectl label namespace frontend app=frontend
+kubectl label namespace backend app=backend
 
 # Frontend Deployment 생성
 kubectl apply -f - <<EOF

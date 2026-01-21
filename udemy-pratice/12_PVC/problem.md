@@ -1,0 +1,12 @@
+# QUESTION 12: PVC
+
+A Persistent Volume already exists and is retained for reuse.
+
+Create a PersistentVolumeClaim named `MariaDB` in the `mariadb` namespace as follows:
+
+1. Access mode ReadWriteOnce
+2. Storage capacity 250Mi
+
+Edit the `maria-deployment` in the file located at `maria.deploy.yaml` to use the newly created PVC.
+
+Verify that the deployment is running and is stable.
